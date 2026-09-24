@@ -1,0 +1,6 @@
+{
+  "name": "FreshKart - Online Grocery Store Greater Noida",
+  "description": "Fast & fresh local grocery delivery in Greater Noida. Fresh fruits, vegetables, dairy, staples, snacks & household essentials delivered to your doorstep.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
