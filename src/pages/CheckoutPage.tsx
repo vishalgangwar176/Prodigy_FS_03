@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   MapPin,
@@ -12,6 +12,14 @@ import {
   AlertCircle,
   Banknote,
   Smartphone,
+  QrCode,
+  Building2,
+  Copy,
+  Check,
+  Timer,
+  Edit2,
+  X,
+  Lock,
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +28,33 @@ import { Address, Order, OrderPayment } from '../types';
 import { createOrder } from '../services/storageService';
 
 type CheckoutStep = 'address' | 'payment' | 'review';
+type PaymentTab = 'UPI_QR' | 'NETBANKING' | 'CARD';
+
+const POPULAR_AREAS = [
+  'Alpha 1, Greater Noida',
+  'Alpha 2, Greater Noida',
+  'Beta 1 & 2, Greater Noida',
+  'Gamma 1 & Jagat Farm Market',
+  'Delta 1 & 2, Greater Noida',
+  'Pari Chowk Hub, Greater Noida',
+  'Chi IV & ATS Paradiso, Greater Noida',
+  'Jaypee Greens Wish Town, Greater Noida',
+  'Omega 1 & 2, Greater Noida',
+  'Knowledge Park II & III, Greater Noida',
+  'Sector 16B, Gaur City 2, Greater Noida West',
+  'Zeta 1, Greater Noida',
+];
+
+const POPULAR_BANKS = [
+  { id: 'sbi', name: 'State Bank of India', code: 'SBI', short: 'SBI' },
+  { id: 'hdfc', name: 'HDFC Bank', code: 'HDFC', short: 'HDFC' },
+  { id: 'icici', name: 'ICICI Bank', code: 'ICICI', short: 'ICICI' },
+  { id: 'axis', name: 'Axis Bank', code: 'UTIBR', short: 'Axis' },
+  { id: 'kotak', name: 'Kotak Mahindra Bank', code: 'KKBK', short: 'Kotak' },
+  { id: 'pnb', name: 'Punjab National Bank', code: 'PUNB', short: 'PNB' },
+  { id: 'bob', name: 'Bank of Baroda', code: 'BARB', short: 'BOB' },
+  { id: 'canara', name: 'Canara Bank', code: 'CNRB', short: 'Canara' },
+];
 
 export function CheckoutPage() {
   const { items, subtotal, deliveryFee, discount, total, appliedCoupon, clearCart } = useCart();
@@ -29,11 +64,13 @@ export function CheckoutPage() {
 
   const [step, setStep] = useState<CheckoutStep>('address');
 
-  // Selected or New Address
-  const defaultAddr = user?.addresses.find(a => a.isDefault) || user?.addresses[0];
-  const [selectedAddressId, setSelectedAddressId] = useState<string>(defaultAddr?.id || 'new');
+  // Address Selection mode: 'saved' or 'manual'
+  const hasSavedAddresses = Boolean(user && user.addresses && user.addresses.length > 0);
+  const defaultAddr = user?.addresses.find(a => a.isDefault) || user?.addresses?.[0];
+  const [addressMode, setAddressMode] = useState<'saved' | 'manual'>(hasSavedAddresses ? 'saved' : 'manual');
+  const [selectedAddressId, setSelectedAddressId] = useState<string>(defaultAddr?.id || 'manual');
 
-  // New Address form inputs
+  // Manual Address Form State
   const [addressForm, setAddressForm] = useState({
     fullName: user?.name || '',
     phone: user?.phone || '+91 98112 34567',
@@ -42,14 +79,46 @@ export function CheckoutPage() {
     landmark: '',
     area: 'Alpha 1, Greater Noida',
     city: 'Greater Noida',
+    state: 'Uttar Pradesh',
     pincode: '201310',
     tag: 'Home' as 'Home' | 'Work' | 'Other',
+    saveToProfile: true,
   });
 
   // Payment Method
   const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'COD'>('ONLINE');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [showSimulatedModal, setShowSimulatedModal] = useState(false);
+
+  // Gateway Modal states
+  const [activePaymentTab, setActivePaymentTab] = useState<PaymentTab>('UPI_QR');
+  const [qrTimerSeconds, setQrTimerSeconds] = useState(300); // 5 mins
+  const [copiedUpi, setCopiedUpi] = useState(false);
+  const [manualUtr, setManualUtr] = useState('');
+  const [selectedBankId, setSelectedBankId] = useState('sbi');
+  const [netBankingCustId, setNetBankingCustId] = useState('FK_CUST_98214');
+  const [isSimulatingBankAuth, setIsSimulatingBankAuth] = useState(false);
+  const [cardForm, setCardForm] = useState({
+    number: '4532 8920 1928 8812',
+    name: user?.name || 'Customer Name',
+    expiry: '08/29',
+    cvv: '821',
+  });
+
+  // Countdown timer for QR
+  useEffect(() => {
+    if (!showSimulatedModal) return;
+    const interval = setInterval(() => {
+      setQrTimerSeconds(prev => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [showSimulatedModal]);
+
+  const formatTimer = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
 
   if (items.length === 0) {
     return (
@@ -67,7 +136,7 @@ export function CheckoutPage() {
   }
 
   const getEffectiveAddress = (): Address => {
-    if (selectedAddressId !== 'new' && user?.addresses) {
+    if (addressMode === 'saved' && selectedAddressId !== 'manual' && user?.addresses) {
       const found = user.addresses.find(a => a.id === selectedAddressId);
       if (found) return found;
     }
@@ -79,25 +148,34 @@ export function CheckoutPage() {
       flat: addressForm.flat || 'Flat 101',
       street: addressForm.street || 'Main Road',
       landmark: addressForm.landmark,
-      area: addressForm.area,
-      city: 'Greater Noida',
-      pincode: addressForm.pincode,
+      area: addressForm.area || 'Alpha 1, Greater Noida',
+      city: addressForm.city || 'Greater Noida',
+      state: addressForm.state || 'Uttar Pradesh',
+      pincode: addressForm.pincode || '201310',
       tag: addressForm.tag,
     };
   };
 
   const validateAddress = (): boolean => {
-    if (selectedAddressId !== 'new') return true;
+    if (addressMode === 'saved' && selectedAddressId !== 'manual') return true;
     if (!addressForm.fullName.trim()) {
-      error('Please provide full recipient name.');
+      error('Please provide recipient full name.');
       return false;
     }
-    if (!addressForm.phone.trim()) {
-      error('Please provide phone number for delivery updates.');
+    if (!addressForm.phone.trim() || addressForm.phone.trim().length < 8) {
+      error('Please provide a valid 10-digit mobile number.');
       return false;
     }
-    if (!addressForm.flat.trim() || !addressForm.street.trim()) {
-      error('Please provide flat number and society / street address.');
+    if (!addressForm.flat.trim()) {
+      error('Please provide flat / house number.');
+      return false;
+    }
+    if (!addressForm.street.trim()) {
+      error('Please provide society / colony / street address.');
+      return false;
+    }
+    if (!addressForm.area.trim()) {
+      error('Please provide sector / area name.');
       return false;
     }
     return true;
@@ -105,8 +183,8 @@ export function CheckoutPage() {
 
   const handleNextFromAddress = () => {
     if (!validateAddress()) return;
-    // Save to user profile if user is logged in and filled new address
-    if (user && selectedAddressId === 'new') {
+    // Save to user profile if user is logged in and opted to save
+    if (user && addressMode === 'manual' && addressForm.saveToProfile) {
       const saved = addAddress({
         fullName: addressForm.fullName,
         phone: addressForm.phone,
@@ -114,7 +192,7 @@ export function CheckoutPage() {
         street: addressForm.street,
         landmark: addressForm.landmark,
         area: addressForm.area,
-        city: 'Greater Noida',
+        city: addressForm.city,
         pincode: addressForm.pincode,
         tag: addressForm.tag,
       });
@@ -123,7 +201,7 @@ export function CheckoutPage() {
     setStep('payment');
   };
 
-  // Complete Order
+  // Complete Order & Persist
   const finalizeOrder = (paymentData: OrderPayment) => {
     const address = getEffectiveAddress();
     const orderId = 'FK-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000);
@@ -191,6 +269,8 @@ export function CheckoutPage() {
               method: 'ONLINE',
               status: 'PAID',
               razorpayPaymentId: response.razorpay_payment_id || 'pay_rzp_' + Date.now(),
+              paymentType: 'RAZORPAY',
+              paidAt: new Date().toISOString(),
             });
           },
           modal: {
@@ -220,11 +300,19 @@ export function CheckoutPage() {
         finalizeOrder({
           method: 'COD',
           status: 'PENDING',
+          paymentType: 'COD',
         });
       }, 600);
     } else {
       triggerRazorpayPayment();
     }
+  };
+
+  const copyUpiId = () => {
+    navigator.clipboard.writeText('freshkart.groceries@okhdfcbank');
+    setCopiedUpi(true);
+    success('UPI ID copied to clipboard!');
+    setTimeout(() => setCopiedUpi(false), 2500);
   };
 
   return (
@@ -306,24 +394,54 @@ export function CheckoutPage() {
       {/* STEP 1: ADDRESS */}
       {step === 'address' && (
         <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200/80 dark:border-slate-800 space-y-6">
-          <div>
-            <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-[#2E7D32]" />
-              Select Greater Noida Delivery Address
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Our Jagat Farm delivery executive will arrive in 20-30 mins
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-[#2E7D32]" />
+                Delivery Address in Greater Noida
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Delivering from Jagat Farm store directly to your doorstep in 20-30 mins
+              </p>
+            </div>
+
+            {/* Address Mode Switcher if user has saved addresses */}
+            {hasSavedAddresses && (
+              <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setAddressMode('saved')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    addressMode === 'saved'
+                      ? 'bg-white dark:bg-slate-700 text-[#2E7D32] shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Saved Addresses ({user?.addresses?.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddressMode('manual');
+                    setSelectedAddressId('manual');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                    addressMode === 'manual'
+                      ? 'bg-white dark:bg-slate-700 text-[#2E7D32] shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  + Add Address Manually
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Saved Addresses for Logged-In User */}
-          {user && user.addresses && user.addresses.length > 0 && (
+          {/* Saved Addresses List */}
+          {addressMode === 'saved' && hasSavedAddresses && (
             <div className="space-y-3">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Saved Addresses
-              </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {user.addresses.map(addr => (
+                {user?.addresses?.map(addr => (
                   <div
                     key={addr.id}
                     onClick={() => setSelectedAddressId(addr.id)}
@@ -338,9 +456,36 @@ export function CheckoutPage() {
                         <span className="font-bold text-xs text-slate-900 dark:text-white">
                           {addr.fullName}
                         </span>
-                        <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-300">
-                          {addr.tag}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                            {addr.tag}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setAddressForm({
+                                fullName: addr.fullName,
+                                phone: addr.phone,
+                                flat: addr.flat,
+                                street: addr.street,
+                                landmark: addr.landmark || '',
+                                area: addr.area,
+                                city: addr.city,
+                                state: addr.state || 'Uttar Pradesh',
+                                pincode: addr.pincode,
+                                tag: (addr.tag as any) || 'Home',
+                                saveToProfile: false,
+                              });
+                              setAddressMode('manual');
+                              setSelectedAddressId('manual');
+                            }}
+                            className="p-1 hover:text-[#2E7D32] text-slate-400"
+                            title="Edit this address"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-xs text-slate-600 dark:text-slate-400">
                         {addr.flat}, {addr.street}
@@ -368,26 +513,37 @@ export function CheckoutPage() {
 
                 {/* Add New Option Card */}
                 <div
-                  onClick={() => setSelectedAddressId('new')}
-                  className={`p-4 rounded-2xl border-2 border-dashed cursor-pointer transition flex items-center justify-center gap-2 ${
-                    selectedAddressId === 'new'
-                      ? 'border-[#2E7D32] bg-emerald-50/40 text-[#2E7D32]'
-                      : 'border-slate-200 dark:border-slate-800 text-slate-500 hover:border-slate-300'
-                  }`}
+                  onClick={() => {
+                    setAddressMode('manual');
+                    setSelectedAddressId('manual');
+                  }}
+                  className="p-4 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-[#2E7D32] cursor-pointer transition flex items-center justify-center gap-2 text-slate-600 dark:text-slate-400 hover:text-[#2E7D32]"
                 >
                   <Plus className="w-4 h-4" />
-                  <span className="text-xs font-bold">Use a different / new address</span>
+                  <span className="text-xs font-bold">Type New Address Manually</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* New Address Input Form */}
-          {selectedAddressId === 'new' && (
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-4">
-              <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Enter Delivery Details
-              </h3>
+          {/* Manual Address Input Form */}
+          {(addressMode === 'manual' || !hasSavedAddresses) && (
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-5 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#2E7D32]" />
+                  Enter Address Details Manually
+                </h3>
+                {hasSavedAddresses && (
+                  <button
+                    type="button"
+                    onClick={() => setAddressMode('saved')}
+                    className="text-xs font-bold text-[#2E7D32] hover:underline"
+                  >
+                    Select From Saved Addresses
+                  </button>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
@@ -405,7 +561,7 @@ export function CheckoutPage() {
 
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Mobile Phone (for delivery OTP) *
+                    Mobile Phone (10 Digits for delivery OTP) *
                   </label>
                   <input
                     type="tel"
@@ -431,71 +587,123 @@ export function CheckoutPage() {
 
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Society Name / Street Address *
+                    Society Name / Colony / Building *
                   </label>
                   <input
                     type="text"
                     value={addressForm.street}
                     onChange={e => setAddressForm({ ...addressForm, street: e.target.value })}
-                    placeholder="e.g. ATS Greens Paradiso"
+                    placeholder="e.g. ATS Greens Paradiso / Omaxe Palm Greens"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#2E7D32]"
+                  />
+                </div>
+
+                {/* Free Manual Area Entry with Datalist Suggestions */}
+                <div className="sm:col-span-2">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Sector / Area / Locality (Manual Entry) *
+                  </label>
+                  <input
+                    type="text"
+                    list="greaterNoidaAreas"
+                    value={addressForm.area}
+                    onChange={e => setAddressForm({ ...addressForm, area: e.target.value })}
+                    placeholder="Type any sector e.g. Alpha 1, Chi IV, Pari Chowk, Sector 16B Gaur City, Knowledge Park..."
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#2E7D32]"
+                  />
+                  <datalist id="greaterNoidaAreas">
+                    {POPULAR_AREAS.map(ar => (
+                      <option key={ar} value={ar} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Landmark (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={addressForm.landmark}
+                    onChange={e => setAddressForm({ ...addressForm, landmark: e.target.value })}
+                    placeholder="e.g. Near Pari Chowk Metro / Opposite Jagat Farm"
                     className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#2E7D32]"
                   />
                 </div>
 
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Sector / Area (Greater Noida) *
-                  </label>
-                  <select
-                    value={addressForm.area}
-                    onChange={e => setAddressForm({ ...addressForm, area: e.target.value })}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-[#2E7D32]"
-                  >
-                    <option>Alpha 1, Greater Noida</option>
-                    <option>Alpha 2, Greater Noida</option>
-                    <option>Beta 1 & 2, Greater Noida</option>
-                    <option>Gamma 1 & Jagat Farm Market</option>
-                    <option>Delta 1 & 2, Greater Noida</option>
-                    <option>Pari Chowk Central Hub</option>
-                    <option>Chi IV & Express Highway</option>
-                    <option>Jaypee Greens Wish Town</option>
-                    <option>Knowledge Park II & III</option>
-                    <option>Omega 1 & 2, Greater Noida</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                    Pincode
+                    Pincode *
                   </label>
                   <input
                     type="text"
                     value={addressForm.pincode}
                     onChange={e => setAddressForm({ ...addressForm, pincode: e.target.value })}
+                    placeholder="201310"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    City
+                  </label>
+                  <input
+                    type="text"
+                    value={addressForm.city}
+                    onChange={e => setAddressForm({ ...addressForm, city: e.target.value })}
+                    placeholder="Greater Noida"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    State
+                  </label>
+                  <input
+                    type="text"
+                    value={addressForm.state}
+                    onChange={e => setAddressForm({ ...addressForm, state: e.target.value })}
+                    placeholder="Uttar Pradesh"
                     className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                   />
                 </div>
               </div>
 
-              {/* Tag selector */}
-              <div className="flex items-center gap-3 pt-2">
-                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                  Address Type:
-                </span>
-                {(['Home', 'Work', 'Other'] as const).map(tag => (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => setAddressForm({ ...addressForm, tag })}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold border transition ${
-                      addressForm.tag === tag
-                        ? 'bg-[#2E7D32] text-white border-[#2E7D32]'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
+              {/* Tag selector & Save Checkbox */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-200 dark:border-slate-700/60">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                    Address Label:
+                  </span>
+                  {(['Home', 'Work', 'Other'] as const).map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setAddressForm({ ...addressForm, tag })}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold border transition ${
+                        addressForm.tag === tag
+                          ? 'bg-[#2E7D32] text-white border-[#2E7D32]'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+
+                {user && (
+                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={addressForm.saveToProfile}
+                      onChange={e => setAddressForm({ ...addressForm, saveToProfile: e.target.checked })}
+                      className="w-4 h-4 accent-[#2E7D32] rounded"
+                    />
+                    Save this address to my profile
+                  </label>
+                )}
               </div>
             </div>
           )}
@@ -535,35 +743,37 @@ export function CheckoutPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             
-            {/* Option 1: Razorpay Online (Cards, UPI, NetBanking) */}
+            {/* Option 1: Razorpay Online (Cards, UPI QR, NetBanking) */}
             <div
               onClick={() => setPaymentMethod('ONLINE')}
               className={`p-5 rounded-2xl border-2 cursor-pointer transition flex flex-col justify-between ${
                 paymentMethod === 'ONLINE'
-                  ? 'border-[#2E7D32] bg-emerald-50/50 dark:bg-emerald-950/30'
+                  ? 'border-[#2E7D32] bg-emerald-50/50 dark:bg-emerald-950/30 ring-2 ring-emerald-500/20'
                   : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
               }`}
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-[#2E7D32] flex items-center justify-center font-bold">
-                    <Smartphone className="w-5 h-5" />
+                    <QrCode className="w-5 h-5" />
                   </div>
                   <span className="text-[10px] font-extrabold uppercase bg-emerald-100 text-[#2E7D32] px-2 py-0.5 rounded-full">
-                    Recommended
+                    Fast & Verified
                   </span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                    Pay Online (Razorpay / UPI / Cards)
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>UPI QR Code & NetBanking</span>
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Google Pay, PhonePe, Paytm, RuPay & Visa credit/debit cards.
+                    Scan via Google Pay, PhonePe, Paytm, BHIM, or use SBI, HDFC, ICICI NetBanking.
                   </p>
                 </div>
               </div>
               <div className="pt-4 flex items-center justify-between">
-                <span className="text-[10px] font-mono text-slate-400">Instant Verification</span>
+                <span className="text-[10px] font-mono text-[#2E7D32] dark:text-emerald-400 font-bold">
+                  Instant QR / NetBanking Gateway
+                </span>
                 {paymentMethod === 'ONLINE' && <CheckCircle2 className="w-4 h-4 text-[#2E7D32]" />}
               </div>
             </div>
@@ -573,7 +783,7 @@ export function CheckoutPage() {
               onClick={() => setPaymentMethod('COD')}
               className={`p-5 rounded-2xl border-2 cursor-pointer transition flex flex-col justify-between ${
                 paymentMethod === 'COD'
-                  ? 'border-[#2E7D32] bg-emerald-50/50 dark:bg-emerald-950/30'
+                  ? 'border-[#2E7D32] bg-emerald-50/50 dark:bg-emerald-950/30 ring-2 ring-emerald-500/20'
                   : 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
               }`}
             >
@@ -586,7 +796,7 @@ export function CheckoutPage() {
                     Cash on Delivery (COD)
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Pay via cash or UPI QR scanner to our rider at your door.
+                    Pay via cash or UPI to our delivery rider upon doorstep grocery delivery.
                   </p>
                 </div>
               </div>
@@ -600,7 +810,7 @@ export function CheckoutPage() {
 
           <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 text-xs text-slate-500 flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-[#2E7D32] shrink-0" />
-            <span>256-Bit SSL Encrypted. In TEST mode, test payments will complete without charging your actual bank account.</span>
+            <span>256-Bit SSL Encrypted. Supports direct UPI QR scanning, Indian NetBanking, and RuPay/Visa test modes.</span>
           </div>
 
           <div className="flex justify-between items-center pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -656,7 +866,7 @@ export function CheckoutPage() {
                 {getEffectiveAddress().flat}, {getEffectiveAddress().street}
               </div>
               <div className="text-xs text-slate-500">
-                {getEffectiveAddress().area}, Greater Noida - {getEffectiveAddress().pincode}
+                {getEffectiveAddress().area}, {getEffectiveAddress().city} - {getEffectiveAddress().pincode}
               </div>
               <div className="text-xs text-slate-500 font-mono mt-1">
                 Phone: {getEffectiveAddress().phone}
@@ -677,7 +887,7 @@ export function CheckoutPage() {
                 </button>
               </div>
               <div className="text-xs font-bold text-slate-900 dark:text-white">
-                {paymentMethod === 'ONLINE' ? 'Razorpay Online (UPI / Card / NetBanking)' : 'Cash on Delivery (COD)'}
+                {paymentMethod === 'ONLINE' ? 'Online (UPI QR Code / NetBanking / Cards)' : 'Cash on Delivery (COD)'}
               </div>
               <div className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
                 Estimated Delivery: Today, within 25 mins
@@ -755,7 +965,9 @@ export function CheckoutPage() {
                 <span>Processing...</span>
               ) : (
                 <>
-                  <span>Place Order • ₹{total}</span>
+                  <span>
+                    {paymentMethod === 'ONLINE' ? `Pay ₹${total} Online` : `Place Order (COD) • ₹${total}`}
+                  </span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -764,77 +976,413 @@ export function CheckoutPage() {
         </div>
       )}
 
-      {/* Simulated Interactive Test Payment Modal */}
+      {/* INTERACTIVE PAYMENT GATEWAY WITH DUMMY QR & NETBANKING MODAL */}
       {showSimulatedModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 my-auto">
+            
+            {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-[#2E7D32] flex items-center justify-center font-bold">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-[#2E7D32] dark:bg-emerald-950/80 flex items-center justify-center font-black">
                   ₹
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                    Razorpay Checkout Simulation
+                  <h3 className="font-black text-sm sm:text-base text-slate-900 dark:text-white">
+                    FreshKart Verified Payment
                   </h3>
-                  <p className="text-[10px] text-slate-400">Test Sandbox Mode</p>
+                  <p className="text-[10px] text-slate-400 flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-emerald-600" />
+                    256-Bit Encrypted Indian Banking Gateway
+                  </p>
                 </div>
               </div>
-              <span className="text-xs font-black text-emerald-700 dark:text-emerald-400">
-                ₹{total}
-              </span>
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Amount</span>
+                <span className="text-base font-black text-[#2E7D32] dark:text-emerald-400">
+                  ₹{total}
+                </span>
+              </div>
             </div>
 
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              Select a simulated payment method to complete this order:
-            </p>
-
-            <div className="space-y-2">
+            {/* Gateway Tabs */}
+            <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 text-xs">
               <button
-                onClick={() => {
-                  setShowSimulatedModal(false);
-                  setIsProcessingPayment(false);
-                  success('Simulated UPI payment verified via GPay!');
-                  finalizeOrder({
-                    method: 'ONLINE',
-                    status: 'PAID',
-                    razorpayPaymentId: 'pay_sim_upi_' + Date.now(),
-                  });
-                }}
-                className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-left text-xs font-bold flex items-center justify-between transition"
+                type="button"
+                onClick={() => setActivePaymentTab('UPI_QR')}
+                className={`flex-1 py-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition ${
+                  activePaymentTab === 'UPI_QR'
+                    ? 'bg-white dark:bg-slate-700 text-[#2E7D32] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
               >
-                <span>Google Pay / PhonePe UPI (Auto Approve)</span>
-                <ArrowRight className="w-4 h-4 text-[#2E7D32]" />
+                <QrCode className="w-3.5 h-3.5" />
+                <span>UPI QR Code</span>
               </button>
 
               <button
-                onClick={() => {
-                  setShowSimulatedModal(false);
-                  setIsProcessingPayment(false);
-                  success('Simulated Card payment verified (RuPay/Visa)!');
-                  finalizeOrder({
-                    method: 'ONLINE',
-                    status: 'PAID',
-                    razorpayPaymentId: 'pay_sim_card_' + Date.now(),
-                  });
-                }}
-                className="w-full p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-left text-xs font-bold flex items-center justify-between transition"
+                type="button"
+                onClick={() => setActivePaymentTab('NETBANKING')}
+                className={`flex-1 py-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition ${
+                  activePaymentTab === 'NETBANKING'
+                    ? 'bg-white dark:bg-slate-700 text-[#2E7D32] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
               >
-                <span>Credit / Debit Card (Auto Approve)</span>
-                <ArrowRight className="w-4 h-4 text-[#2E7D32]" />
+                <Building2 className="w-3.5 h-3.5" />
+                <span>NetBanking</span>
               </button>
 
               <button
-                onClick={() => {
-                  setShowSimulatedModal(false);
-                  setIsProcessingPayment(false);
-                  error('Simulated payment was cancelled.');
-                }}
-                className="w-full p-2.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-center text-xs font-semibold transition"
+                type="button"
+                onClick={() => setActivePaymentTab('CARD')}
+                className={`flex-1 py-2 rounded-lg font-bold flex items-center justify-center gap-1.5 transition ${
+                  activePaymentTab === 'CARD'
+                    ? 'bg-white dark:bg-slate-700 text-[#2E7D32] shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
               >
-                Simulate Payment Failure / Cancel
+                <CreditCard className="w-3.5 h-3.5" />
+                <span>Cards</span>
               </button>
             </div>
+
+            {/* TAB 1: DUMMY UPI QR CODE */}
+            {activePaymentTab === 'UPI_QR' && (
+              <div className="space-y-4 text-center">
+                <div className="bg-slate-50 dark:bg-slate-800/40 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800">
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+                    Scan with any UPI App (Google Pay / PhonePe / Paytm / BHIM)
+                  </p>
+
+                  {/* High Quality SVG Dummy QR Code */}
+                  <div className="relative mx-auto w-48 h-48 bg-white p-3 rounded-2xl shadow-md border border-slate-200 flex items-center justify-center">
+                    <svg
+                      viewBox="0 0 200 200"
+                      className="w-full h-full text-slate-900"
+                      fill="currentColor"
+                    >
+                      {/* Top-Left Finder Pattern */}
+                      <rect x="10" y="10" width="50" height="50" fill="#1F2937" rx="6" />
+                      <rect x="20" y="20" width="30" height="30" fill="white" rx="3" />
+                      <rect x="26" y="26" width="18" height="18" fill="#2E7D32" rx="2" />
+
+                      {/* Top-Right Finder Pattern */}
+                      <rect x="140" y="10" width="50" height="50" fill="#1F2937" rx="6" />
+                      <rect x="150" y="20" width="30" height="30" fill="white" rx="3" />
+                      <rect x="156" y="26" width="18" height="18" fill="#2E7D32" rx="2" />
+
+                      {/* Bottom-Left Finder Pattern */}
+                      <rect x="10" y="140" width="50" height="50" fill="#1F2937" rx="6" />
+                      <rect x="20" y="150" width="30" height="30" fill="white" rx="3" />
+                      <rect x="26" y="156" width="18" height="18" fill="#2E7D32" rx="2" />
+
+                      {/* Dummy Matrix Dots & Timing Tracks */}
+                      <rect x="70" y="20" width="8" height="8" />
+                      <rect x="90" y="20" width="8" height="8" />
+                      <rect x="110" y="20" width="8" height="8" />
+                      <rect x="70" y="40" width="8" height="8" />
+                      <rect x="100" y="40" width="8" height="8" />
+                      <rect x="120" y="40" width="8" height="8" />
+                      <rect x="20" y="70" width="8" height="8" />
+                      <rect x="40" y="70" width="8" height="8" />
+                      <rect x="70" y="70" width="8" height="8" />
+                      <rect x="90" y="70" width="8" height="8" />
+                      <rect x="110" y="70" width="8" height="8" />
+                      <rect x="140" y="70" width="8" height="8" />
+                      <rect x="160" y="70" width="8" height="8" />
+
+                      {/* Center Cluster */}
+                      <rect x="70" y="90" width="8" height="8" />
+                      <rect x="120" y="90" width="8" height="8" />
+                      <rect x="70" y="110" width="8" height="8" />
+                      <rect x="90" y="110" width="8" height="8" />
+                      <rect x="120" y="110" width="8" height="8" />
+                      <rect x="20" y="120" width="8" height="8" />
+                      <rect x="40" y="120" width="8" height="8" />
+                      <rect x="140" y="100" width="8" height="8" />
+                      <rect x="160" y="100" width="8" height="8" />
+                      <rect x="180" y="100" width="8" height="8" />
+
+                      {/* Bottom-Right Matrix Dots */}
+                      <rect x="70" y="140" width="8" height="8" />
+                      <rect x="90" y="140" width="8" height="8" />
+                      <rect x="110" y="140" width="8" height="8" />
+                      <rect x="140" y="140" width="8" height="8" />
+                      <rect x="160" y="140" width="8" height="8" />
+                      <rect x="80" y="160" width="8" height="8" />
+                      <rect x="100" y="160" width="8" height="8" />
+                      <rect x="130" y="160" width="8" height="8" />
+                      <rect x="150" y="160" width="8" height="8" />
+                      <rect x="170" y="160" width="8" height="8" />
+                      <rect x="70" y="180" width="8" height="8" />
+                      <rect x="110" y="180" width="8" height="8" />
+                      <rect x="140" y="180" width="8" height="8" />
+                      <rect x="170" y="180" width="8" height="8" />
+                    </svg>
+
+                    {/* FreshKart Logo Badge in Center of QR */}
+                    <div className="absolute inset-0 m-auto w-10 h-10 rounded-xl bg-white border-2 border-[#2E7D32] flex items-center justify-center shadow-md">
+                      <div className="w-7 h-7 rounded-lg bg-[#2E7D32] text-white flex items-center justify-center font-black text-xs">
+                        FK
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Timer & UPI VPA */}
+                  <div className="mt-3 flex items-center justify-center gap-2 text-xs">
+                    <span className="text-slate-400 flex items-center gap-1 font-mono">
+                      <Timer className="w-3.5 h-3.5 text-amber-500 animate-spin" />
+                      Expires in: <strong className="text-slate-800 dark:text-slate-200">{formatTimer(qrTimerSeconds)}</strong>
+                    </span>
+                  </div>
+
+                  <div className="mt-2.5 inline-flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-mono text-slate-700 dark:text-slate-300">
+                    <span>freshkart.groceries@okhdfcbank</span>
+                    <button
+                      type="button"
+                      onClick={copyUpiId}
+                      className="text-[#2E7D32] hover:text-[#256628] font-bold flex items-center gap-1"
+                      title="Copy UPI ID"
+                    >
+                      {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Primary QR Approve Action */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSimulatedModal(false);
+                      setIsProcessingPayment(false);
+                      success('UPI payment verified via Google Pay / PhonePe!');
+                      finalizeOrder({
+                        method: 'ONLINE',
+                        status: 'PAID',
+                        paymentType: 'UPI_QR',
+                        upiTransactionId: 'UPI/' + Math.floor(100000000000 + Math.random() * 900000000000),
+                        paidAt: new Date().toISOString(),
+                      });
+                    }}
+                    className="w-full py-3 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-black text-xs shadow-lg shadow-emerald-700/20 flex items-center justify-center gap-2 transition active:scale-95"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>I Have Paid via UPI (Auto-Approve Order)</span>
+                  </button>
+
+                  {/* Manual UTR field */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Or enter 12-digit UTR (e.g. 428198273910)"
+                      value={manualUtr}
+                      onChange={e => setManualUtr(e.target.value)}
+                      className="flex-1 p-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!manualUtr.trim() || manualUtr.trim().length < 6) {
+                          error('Please enter a valid UPI Reference / UTR Number.');
+                          return;
+                        }
+                        setShowSimulatedModal(false);
+                        setIsProcessingPayment(false);
+                        success('Payment confirmed with UTR ' + manualUtr.trim());
+                        finalizeOrder({
+                          method: 'ONLINE',
+                          status: 'PAID',
+                          paymentType: 'UPI_QR',
+                          upiTransactionId: manualUtr.trim(),
+                          paidAt: new Date().toISOString(),
+                        });
+                      }}
+                      className="px-4 py-2 rounded-xl bg-slate-800 text-white dark:bg-slate-700 text-xs font-bold shrink-0 hover:bg-slate-900"
+                    >
+                      Verify UTR
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: INDIAN NETBANKING SYSTEM */}
+            {activePaymentTab === 'NETBANKING' && (
+              <div className="space-y-4 text-xs">
+                <div className="space-y-2">
+                  <label className="font-bold text-slate-700 dark:text-slate-300 block">
+                    Select Your Bank:
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {POPULAR_BANKS.map(bank => (
+                      <button
+                        key={bank.id}
+                        type="button"
+                        onClick={() => setSelectedBankId(bank.id)}
+                        className={`p-2.5 rounded-xl border flex flex-col items-center justify-center text-center gap-1 transition ${
+                          selectedBankId === bank.id
+                            ? 'border-[#2E7D32] bg-emerald-50 dark:bg-emerald-950/50 text-[#2E7D32] font-black ring-2 ring-emerald-500/20'
+                            : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                        }`}
+                      >
+                        <Building2 className="w-4 h-4" />
+                        <span className="text-[11px] truncate w-full">{bank.short}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Simulated NetBanking Credential Box */}
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-slate-500">
+                      Bank: <strong className="text-slate-900 dark:text-white">{POPULAR_BANKS.find(b => b.id === selectedBankId)?.name}</strong>
+                    </span>
+                    <span className="font-mono text-emerald-600 font-bold">Secure Banking Portal</span>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                      Customer ID / NetBanking Username
+                    </label>
+                    <input
+                      type="text"
+                      value={netBankingCustId}
+                      onChange={e => setNetBankingCustId(e.target.value)}
+                      placeholder="e.g. USER883192"
+                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isSimulatingBankAuth}
+                  onClick={() => {
+                    setIsSimulatingBankAuth(true);
+                    const bank = POPULAR_BANKS.find(b => b.id === selectedBankId);
+                    setTimeout(() => {
+                      setIsSimulatingBankAuth(false);
+                      setShowSimulatedModal(false);
+                      setIsProcessingPayment(false);
+                      success(`NetBanking payment verified via ${bank?.name}!`);
+                      finalizeOrder({
+                        method: 'ONLINE',
+                        status: 'PAID',
+                        paymentType: 'NETBANKING',
+                        bankName: bank?.name,
+                        razorpayPaymentId: `NETBNK_${bank?.code}_${Date.now()}`,
+                        paidAt: new Date().toISOString(),
+                      });
+                    }, 1200);
+                  }}
+                  className="w-full py-3 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-black text-xs shadow-lg shadow-emerald-700/20 flex items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50"
+                >
+                  {isSimulatingBankAuth ? (
+                    <span>Authenticating with {POPULAR_BANKS.find(b => b.id === selectedBankId)?.short} Server...</span>
+                  ) : (
+                    <>
+                      <Building2 className="w-4 h-4" />
+                      <span>Authorize & Pay ₹{total} via NetBanking</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* TAB 3: DEBIT / CREDIT CARD */}
+            {activePaymentTab === 'CARD' && (
+              <div className="space-y-3 text-xs">
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Card Number
+                  </label>
+                  <input
+                    type="text"
+                    value={cardForm.number}
+                    onChange={e => setCardForm({ ...cardForm, number: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Expiry Date
+                    </label>
+                    <input
+                      type="text"
+                      value={cardForm.expiry}
+                      onChange={e => setCardForm({ ...cardForm, expiry: e.target.value })}
+                      placeholder="MM/YY"
+                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      CVV
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={4}
+                      value={cardForm.cvv}
+                      onChange={e => setCardForm({ ...cardForm, cvv: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Cardholder Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={cardForm.name}
+                    onChange={e => setCardForm({ ...cardForm, name: e.target.value })}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSimulatedModal(false);
+                    setIsProcessingPayment(false);
+                    success('Card payment verified via RuPay / Visa Sandbox!');
+                    finalizeOrder({
+                      method: 'ONLINE',
+                      status: 'PAID',
+                      paymentType: 'CARD',
+                      razorpayPaymentId: 'CARD_' + Date.now(),
+                      paidAt: new Date().toISOString(),
+                    });
+                  }}
+                  className="w-full py-3 rounded-2xl bg-[#2E7D32] hover:bg-[#256628] text-white font-black text-xs shadow-lg shadow-emerald-700/20 flex items-center justify-center gap-2 transition active:scale-95 mt-2"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span>Pay ₹{total} with Card</span>
+                </button>
+              </div>
+            )}
+
+            {/* Cancel Footer */}
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSimulatedModal(false);
+                  setIsProcessingPayment(false);
+                  info('Payment flow closed. You can retry anytime.');
+                }}
+                className="text-xs font-semibold text-slate-400 hover:text-rose-500 transition"
+              >
+                Cancel and return to checkout
+              </button>
+            </div>
+
           </div>
         </div>
       )}

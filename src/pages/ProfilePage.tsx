@@ -33,8 +33,9 @@ export function ProfilePage() {
     flat: '',
     street: '',
     landmark: '',
-    area: 'Alpha 1',
+    area: 'Alpha 1, Greater Noida',
     city: 'Greater Noida',
+    state: 'Uttar Pradesh',
     pincode: '201310',
     tag: 'Home' as 'Home' | 'Work' | 'Other',
   });
@@ -71,6 +72,10 @@ export function ProfilePage() {
       error('Please specify flat number and society/street.');
       return;
     }
+    if (!newAddr.area.trim()) {
+      error('Please specify area / sector name.');
+      return;
+    }
     addAddress({
       fullName: newAddr.fullName,
       phone: newAddr.phone,
@@ -78,8 +83,8 @@ export function ProfilePage() {
       street: newAddr.street,
       landmark: newAddr.landmark,
       area: newAddr.area,
-      city: 'Greater Noida',
-      pincode: newAddr.pincode,
+      city: newAddr.city || 'Greater Noida',
+      pincode: newAddr.pincode || '201310',
       tag: newAddr.tag,
     });
     setIsAddressModalOpen(false);
@@ -358,24 +363,53 @@ export function ProfilePage() {
                 />
               </div>
 
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Sector / Area / Locality (Manual Entry) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sector Alpha 1, Beta 2, Chi IV, Gaur City, etc."
+                  value={newAddr.area}
+                  onChange={e => setNewAddr({ ...newAddr, area: e.target.value })}
+                  className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">Sector / Area</label>
-                  <select
-                    value={newAddr.area}
-                    onChange={e => setNewAddr({ ...newAddr, area: e.target.value })}
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">City</label>
+                  <input
+                    type="text"
+                    value={newAddr.city}
+                    onChange={e => setNewAddr({ ...newAddr, city: e.target.value })}
+                    placeholder="Greater Noida"
                     className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
-                  >
-                    <option>Alpha 1</option>
-                    <option>Alpha 2</option>
-                    <option>Beta 1 & 2</option>
-                    <option>Gamma 1 & Jagat Farm</option>
-                    <option>Delta 1 & 2</option>
-                    <option>Pari Chowk Hub</option>
-                    <option>Chi IV</option>
-                    <option>Jaypee Greens</option>
-                    <option>Knowledge Park</option>
-                  </select>
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">Pincode</label>
+                  <input
+                    type="text"
+                    value={newAddr.pincode}
+                    onChange={e => setNewAddr({ ...newAddr, pincode: e.target.value })}
+                    placeholder="201310"
+                    className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">Landmark (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Near Pari Chowk / Metro"
+                    value={newAddr.landmark}
+                    onChange={e => setNewAddr({ ...newAddr, landmark: e.target.value })}
+                    className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
                 </div>
                 <div>
                   <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">Address Tag</label>

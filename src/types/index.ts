@@ -65,8 +65,9 @@ export interface Address {
   landmark?: string;
   area: string;
   city: string;
+  state?: string;
   pincode: string;
-  tag: 'Home' | 'Work' | 'Other';
+  tag: 'Home' | 'Work' | 'Other' | string;
   isDefault?: boolean;
 }
 
@@ -96,6 +97,10 @@ export interface OrderPayment {
   method: 'ONLINE' | 'COD';
   status: 'PAID' | 'PENDING' | 'FAILED';
   razorpayPaymentId?: string;
+  paymentType?: 'UPI_QR' | 'NETBANKING' | 'CARD' | 'COD' | 'RAZORPAY';
+  upiTransactionId?: string;
+  bankName?: string;
+  paidAt?: string;
 }
 
 export interface Order {

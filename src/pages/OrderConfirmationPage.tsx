@@ -99,10 +99,36 @@ export function OrderConfirmationPage() {
               </div>
             </div>
 
-            {/* Total Paid */}
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center text-sm font-black">
-              <span>Total Amount ({order.payment.method})</span>
-              <span className="text-emerald-700 dark:text-emerald-400 text-base">₹{order.pricing.total}</span>
+            {/* Total Paid & Payment Method */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-sm font-black">
+                <span>Total Amount ({order.payment.method})</span>
+                <span className="text-emerald-700 dark:text-emerald-400 text-base">₹{order.pricing.total}</span>
+              </div>
+              {order.payment.paymentType && (
+                <div className="flex justify-between items-center text-[11px] text-slate-500 dark:text-slate-400 pt-1">
+                  <span>Payment Gateway:</span>
+                  <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                    {order.payment.paymentType === 'UPI_QR' ? 'UPI QR Code' : order.payment.paymentType === 'NETBANKING' ? `NetBanking (${order.payment.bankName || 'Bank'})` : order.payment.paymentType}
+                  </span>
+                </div>
+              )}
+              {order.payment.upiTransactionId && (
+                <div className="flex justify-between items-center text-[11px] text-slate-500 dark:text-slate-400">
+                  <span>UPI / UTR Ref:</span>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                    {order.payment.upiTransactionId}
+                  </span>
+                </div>
+              )}
+              {order.payment.razorpayPaymentId && (
+                <div className="flex justify-between items-center text-[11px] text-slate-500 dark:text-slate-400">
+                  <span>Payment ID:</span>
+                  <span className="font-mono text-slate-600 dark:text-slate-400">
+                    {order.payment.razorpayPaymentId}
+                  </span>
+                </div>
+              )}
             </div>
           </>
         )}

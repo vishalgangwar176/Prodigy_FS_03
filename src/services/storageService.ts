@@ -2,7 +2,7 @@ import { Product, Review, Order, SupportTicket, OrderStatus } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_REVIEWS, INITIAL_ORDERS } from '../data/seedProducts';
 
 const KEYS = {
-  PRODUCTS: 'freshkart_products_v1',
+  PRODUCTS: 'freshkart_products_v2',
   REVIEWS: 'freshkart_reviews_v1',
   ORDERS: 'freshkart_orders_v1',
   TICKETS: 'freshkart_tickets_v1',
@@ -24,8 +24,47 @@ export function emitEvent(eventName: string, detail?: any) {
 
 // Initialise storage if empty
 export function initStorage() {
-  if (!localStorage.getItem(KEYS.PRODUCTS)) {
-    localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+  const existingV2 = localStorage.getItem(KEYS.PRODUCTS);
+  if (!existingV2) {
+    // Check if there was an earlier version with custom added products
+    const oldV1 = localStorage.getItem('freshkart_products_v1');
+    if (oldV1) {
+      try {
+        const parsedOld: Product[] = JSON.parse(oldV1);
+        const map = new Map<string, Product>();
+        // Seed with all current initial products first
+        INITIAL_PRODUCTS.forEach(p => map.set(p.id, p));
+        // Keep any modified stock or custom user-created products from old version
+        parsedOld.forEach(p => {
+          if (!map.has(p.id)) {
+            map.set(p.id, p);
+          }
+        });
+        localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(Array.from(map.values())));
+      } catch {
+        localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+      }
+    } else {
+      localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+    }
+  } else {
+    // Ensure that if new initial products were added, they get included if not present
+    try {
+      const current: Product[] = JSON.parse(existingV2);
+      const currentIds = new Set(current.map(p => p.id));
+      let added = false;
+      INITIAL_PRODUCTS.forEach(ip => {
+        if (!currentIds.has(ip.id)) {
+          current.push(ip);
+          added = true;
+        }
+      });
+      if (added) {
+        localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(current));
+      }
+    } catch {
+      localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+    }
   }
   if (!localStorage.getItem(KEYS.REVIEWS)) {
     localStorage.setItem(KEYS.REVIEWS, JSON.stringify(INITIAL_REVIEWS));

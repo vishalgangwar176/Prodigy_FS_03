@@ -38,7 +38,8 @@ export function Products() {
   const searchParam = searchParams.get('search') || '';
   const sortParam = searchParams.get('sort') || 'relevance';
   const minPriceParam = Number(searchParams.get('minPrice')) || 0;
-  const maxPriceParam = Number(searchParams.get('maxPrice')) || 700;
+  const hasMaxPrice = searchParams.has('maxPrice');
+  const maxPriceParam = hasMaxPrice ? Number(searchParams.get('maxPrice')) : 2000;
   const ratingParam = Number(searchParams.get('rating')) || 0;
   const inStockParam = searchParams.get('inStock') === 'true';
   const brandParam = searchParams.get('brand') || '';
@@ -73,7 +74,7 @@ export function Products() {
 
   const clearAllFilters = () => {
     setSearchParams({});
-    setSliderMaxPrice(700);
+    setSliderMaxPrice(2000);
   };
 
   // Filtered and sorted products
@@ -93,8 +94,11 @@ export function Products() {
           p.description.toLowerCase().includes(q);
         if (!matches) return false;
       }
-      // Price range
-      if (p.price < minPriceParam || p.price > maxPriceParam) {
+      // Price range: minPrice only if provided, maxPrice only if set by user
+      if (searchParams.has('minPrice') && p.price < minPriceParam) {
+        return false;
+      }
+      if (hasMaxPrice && p.price > maxPriceParam) {
         return false;
       }
       // Rating filter
@@ -129,18 +133,21 @@ export function Products() {
     searchParam,
     sortParam,
     minPriceParam,
+    hasMaxPrice,
     maxPriceParam,
     ratingParam,
     inStockParam,
     brandParam,
     discountParam,
+    searchParams,
   ]);
 
   // Active filters count
   const activeFiltersCount = [
     categoryParam !== 'All',
     searchParam !== '',
-    minPriceParam > 0 || maxPriceParam < 700,
+    searchParams.has('minPrice'),
+    hasMaxPrice,
     ratingParam > 0,
     inStockParam,
     brandParam !== '',
@@ -268,7 +275,7 @@ export function Products() {
               />
             </span>
           )}
-          {maxPriceParam < 700 && (
+          {hasMaxPrice && (
             <span className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 font-medium">
               Max Price: ₹{maxPriceParam}
               <X
@@ -374,25 +381,54 @@ export function Products() {
           </div>
 
           {/* Price Range Slider */}
-          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
             <div className="flex justify-between items-center text-xs">
               <h4 className="font-bold text-slate-400 uppercase tracking-wider">Max Price</h4>
-              <span className="font-black text-slate-900 dark:text-white">₹{sliderMaxPrice}</span>
+              <span className="font-black text-slate-900 dark:text-white">
+                {hasMaxPrice ? `₹${sliderMaxPrice}` : 'No Limit'}
+              </span>
             </div>
             <input
               type="range"
-              min="30"
-              max="700"
-              step="10"
+              min="20"
+              max="2000"
+              step="20"
               value={sliderMaxPrice}
-              onChange={e => setSliderMaxPrice(Number(e.target.value))}
-              onMouseUp={() => updateParams({ maxPrice: sliderMaxPrice < 700 ? String(sliderMaxPrice) : null })}
-              onTouchEnd={() => updateParams({ maxPrice: sliderMaxPrice < 700 ? String(sliderMaxPrice) : null })}
+              onChange={e => {
+                const val = Number(e.target.value);
+                setSliderMaxPrice(val);
+                updateParams({ maxPrice: val < 2000 ? String(val) : null });
+              }}
               className="w-full accent-[#2E7D32] cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-slate-400">
-              <span>₹30</span>
-              <span>₹700</span>
+              <span>₹20</span>
+              <span>₹2000</span>
+            </div>
+            {/* Quick Price Buttons */}
+            <div className="grid grid-cols-2 gap-1.5 pt-1">
+              {[
+                { label: 'Under ₹100', val: 100 },
+                { label: 'Under ₹300', val: 300 },
+                { label: 'Under ₹600', val: 600 },
+                { label: 'Under ₹1000', val: 1000 },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  type="button"
+                  onClick={() => {
+                    setSliderMaxPrice(opt.val);
+                    updateParams({ maxPrice: String(opt.val) });
+                  }}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition ${
+                    hasMaxPrice && maxPriceParam === opt.val
+                      ? 'bg-emerald-50 border-[#2E7D32] text-[#2E7D32] dark:bg-emerald-950/60 dark:text-emerald-400'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -644,20 +680,52 @@ export function Products() {
               <div>
                 <div className="flex justify-between items-center text-xs mb-2">
                   <h4 className="font-bold text-slate-400 uppercase tracking-wider">Max Price</h4>
-                  <span className="font-black text-slate-900 dark:text-white">₹{sliderMaxPrice}</span>
+                  <span className="font-black text-slate-900 dark:text-white">
+                    {hasMaxPrice ? `₹${sliderMaxPrice}` : 'No Limit'}
+                  </span>
                 </div>
                 <input
                   type="range"
-                  min="30"
-                  max="700"
-                  step="10"
+                  min="20"
+                  max="2000"
+                  step="20"
                   value={sliderMaxPrice}
                   onChange={e => {
-                    setSliderMaxPrice(Number(e.target.value));
-                    updateParams({ maxPrice: Number(e.target.value) < 700 ? e.target.value : null });
+                    const val = Number(e.target.value);
+                    setSliderMaxPrice(val);
+                    updateParams({ maxPrice: val < 2000 ? String(val) : null });
                   }}
                   className="w-full accent-[#2E7D32]"
                 />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                  <span>₹20</span>
+                  <span>₹2000</span>
+                </div>
+                {/* Quick Price Buttons */}
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  {[
+                    { label: 'Under ₹100', val: 100 },
+                    { label: 'Under ₹300', val: 300 },
+                    { label: 'Under ₹600', val: 600 },
+                    { label: 'Under ₹1000', val: 1000 },
+                  ].map(opt => (
+                    <button
+                      key={opt.val}
+                      type="button"
+                      onClick={() => {
+                        setSliderMaxPrice(opt.val);
+                        updateParams({ maxPrice: String(opt.val) });
+                      }}
+                      className={`px-2 py-1.5 rounded-xl text-xs font-bold border text-center transition ${
+                        hasMaxPrice && maxPriceParam === opt.val
+                          ? 'bg-emerald-50 border-[#2E7D32] text-[#2E7D32] dark:bg-emerald-950/60 dark:text-emerald-400'
+                          : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Rating */}

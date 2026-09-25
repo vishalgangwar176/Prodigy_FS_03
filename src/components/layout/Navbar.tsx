@@ -441,9 +441,43 @@ export function Navbar() {
               </button>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              We deliver fresh groceries from our Jagat Farm hub across all major sectors of Greater Noida in 20-30 mins.
+              We deliver fresh groceries from our Jagat Farm hub across all sectors of Greater Noida in 20-30 mins.
             </p>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
+
+            {/* Manual Location Input */}
+            <div className="mb-4 space-y-2">
+              <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                Type Your Sector / Area Manually:
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. Sector 16B, Gaur City, Pari Chowk..."
+                  defaultValue={currentLocation}
+                  id="manualNavbarLocationInput"
+                  className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('manualNavbarLocationInput') as HTMLInputElement;
+                    if (el && el.value.trim()) {
+                      setCurrentLocation(el.value.trim());
+                      setIsLocationModalOpen(false);
+                    }
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-[#2E7D32] text-white text-xs font-bold hover:bg-[#256628] shrink-0"
+                >
+                  Set
+                </button>
+              </div>
+            </div>
+
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+              Or pick popular sector:
+            </div>
+
+            <div className="space-y-2 max-h-52 overflow-y-auto">
               {[
                 'Alpha 1, Greater Noida (201310)',
                 'Alpha 2, Greater Noida (201310)',
